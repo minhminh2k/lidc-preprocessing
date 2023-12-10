@@ -1,7 +1,7 @@
 import argparse
 import os
 import numpy as np
-
+import cv2
 from medpy.filter.smoothing import anisotropic_diffusion
 from scipy.ndimage import median_filter
 from skimage import measure, morphology
@@ -66,3 +66,19 @@ def segment_lung(img):
 
 def count_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def resize_image(image, size=128):
+    resized_image = cv2.resize(image, (size, size), interpolation=cv2.INTER_AREA)
+    return resized_image
+
+def resize_mask(mask, size=128):
+    resized_mask = cv2.resize(mask.astype(float), (size, size))
+    resized_mask = resized_mask.astype(bool)
+    return resized_mask
+
+def ct_normalize(image, slope, intercept):
+    image[image==-0] =0
+    image = image * slope + intercept
+    image[image > 400] = 400
+    image[image < -1000] = -1000
+    return image
