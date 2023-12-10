@@ -1,0 +1,8 @@
+./LIDC-IDRI/
+*.dcm
+*.zip
+*.xml
+./env/
+__pycache__/
+env/
+data/
