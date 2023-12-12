@@ -197,8 +197,8 @@ class MakeDataSet:
                     mask_name = "{}/{}_CM001_slice{}".format(pid,pid[-4:],prefix[slice])
                     meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True]
                     self.save_meta(meta_list)
-                    np.save(patient_clean_dir_image / nodule_name, resize_image(lung_segmented_np_array))
-                    np.save(patient_clean_dir_mask / mask_name, resize_mask(lung_mask))
+                    np.save(CLEAN_DIR_IMAGE / nodule_name, resize_image(lung_segmented_np_array))
+                    np.save(CLEAN_DIR_MASK / mask_name, resize_mask(lung_mask))
 
 
         print("Saved Meta data")

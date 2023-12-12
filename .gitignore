@@ -153,3 +153,4 @@ logs/
 wandb/
 test.py
 outputs/
+segment_data/
