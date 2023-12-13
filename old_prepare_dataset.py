@@ -9,12 +9,10 @@ import warnings
 import pylidc as pl
 from tqdm import tqdm
 from statistics import median_high
-import pydicom
-from pydicom.data import get_testdata_file
-from utils import is_dir_path,segment_lung, resize_image, resize_mask, ct_normalize
+
+from utils import is_dir_path,segment_lung
 from pylidc.utils import consensus
 from PIL import Image
-import cv2
 
 warnings.filterwarnings(action='ignore')
 
@@ -70,9 +68,8 @@ class MakeDataSet:
     def save_meta(self,meta_list):
         """Saves the information of nodule to csv file"""
         tmp = pd.Series(meta_list,index=['patient_id','nodule_no','slice_no','original_image','mask_image','malignancy','is_cancer','is_clean'])
-        # self.meta = self.meta.append(tmp,ignore_index=True)
         self.meta = pd.concat([self.meta, pd.DataFrame([tmp])], ignore_index=True)
-    
+
     def prepare_dataset(self):
         # This is to name each image and mask
         prefix = [str(x).zfill(3) for x in range(1000)]
@@ -95,24 +92,14 @@ class MakeDataSet:
         CLEAN_DIR_MASK = Path(self.clean_path_mask)
 
 
+
         for patient in tqdm(self.IDRI_list):
             pid = patient #LIDC-IDRI-0001~
-            # from IPython import embed; embed()
             scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first()
             nodules_annotation = scan.cluster_annotations()
             vol = scan.to_volume()
-            dicom_path = scan.get_path_to_dicom_files()
-            files = []
-            for f in os.listdir(dicom_path):
-                if f.endswith('.dcm'):
-                    files.append(f)
-            # rescale_intercept = scan.image_dicom[0].RescaleIntercept
-            # rescale_slope = scan.image_dicom[0].RescaleSlope
             print("Patient ID: {} Dicom Shape: {} Number of Annotated Nodules: {}".format(pid,vol.shape,len(nodules_annotation)))
-            # Resample to a common voxel spacing of 1 mm in all directions. 
-            # This is to make sure that the voxel size is consistent across all patients
-            # The pixel values were converted to Hounsfield units
-            # from IPython import embed; embed()
+
             patient_image_dir = IMAGE_DIR / pid
             patient_mask_dir = MASK_DIR / pid
             Path(patient_image_dir).mkdir(parents=True, exist_ok=True)
@@ -120,74 +107,32 @@ class MakeDataSet:
 
             if len(nodules_annotation) > 0:
                 # Patients with nodules
-                nodule_idxes = []
-                mask_list = []
-                malignancy_list = []
-                cancer_label_list = []
                 for nodule_idx, nodule in enumerate(nodules_annotation):
-                    # Call nodule images. Each Patient will have at maximum 4 annotations as there are only 4 doctors
-                    # This current for loop iterates over total number of nodules in a single patient
-                    mask, cbbox, masks = consensus(nodule, self.c_level, self.padding)
-                    # cbbox=(slice(0, 512, None), slice(0, 512, None), slice(67, 71, None))
-                    # nodule_idxes = list(range(cbbox[2].start,cbbox[2].stop))
-                    slices = list(range(cbbox[2].start,cbbox[2].stop))
+                # Call nodule images. Each Patient will have at maximum 4 annotations as there are only 4 doctors
+                # This current for loop iterates over total number of nodules in a single patient
+                    mask, cbbox, masks = consensus(nodule,self.c_level,self.padding)
+                    lung_np_array = vol[cbbox]
                     # We calculate the malignancy information
                     malignancy, cancer_label = self.calculate_malignancy(nodule)
+
                     for nodule_slice in range(mask.shape[2]):
+                        # This second for loop iterates over each single nodule.
+                        # There are some mask sizes that are too small. These may hinder training.
                         if np.sum(mask[:,:,nodule_slice]) <= self.mask_threshold:
                             continue
-                        nodule_idxes.append(slices[nodule_slice])                            
-                        mask_list.append(mask[:,:,nodule_slice])
-                        malignancy_list.append(malignancy)
-                        cancer_label_list.append(cancer_label)
-                current_index = 0
-                for slice in range(vol.shape[2]):
-                    image_path = os.path.join(dicom_path,files[slice])
-                    ds = pydicom.dcmread(image_path)
-                    intercept = ds.RescaleIntercept
-                    slope = ds.RescaleSlope
-                    if slice in nodule_idxes:
-                        lung_np_array = vol[:,:,slice]
-                        lung_np_array = ct_normalize(lung_np_array, slope, intercept)
-
-                        nodule_name = "{}/{}_NI001_slice{}".format(pid,pid[-4:],prefix[slice])
-                        mask_name = "{}/{}_MA001_slice{}".format(pid,pid[-4:],prefix[slice])
-                        meta_list = [
-                            pid[-4:],
-                            nodule_idx,
-                            prefix[slice],
-                            nodule_name,
-                            mask_name,
-                            malignancy_list[current_index],
-                            cancer_label_list[current_index],
-                            False]
+                        # Segment Lung part only
+                        lung_segmented_np_array = segment_lung(lung_np_array[:,:,nodule_slice])
+                        # I am not sure why but some values are stored as -0. <- this may result in datatype error in pytorch training # Not sure
+                        lung_segmented_np_array[lung_segmented_np_array==-0] =0
+                        # This itereates through the slices of a single nodule
+                        # Naming of each file: NI= Nodule Image, MA= Mask Original
+                        nodule_name = "{}_NI{}_slice{}".format(pid[-4:],prefix[nodule_idx],prefix[nodule_slice])
+                        mask_name = "{}_MA{}_slice{}".format(pid[-4:],prefix[nodule_idx],prefix[nodule_slice])
+                        meta_list = [pid[-4:],nodule_idx,prefix[nodule_slice],nodule_name,mask_name,malignancy,cancer_label,False]
 
                         self.save_meta(meta_list)
-                        # if vol.shape[2] > 128:
-                        #     # center crop
-                        #     vol = vol[:,:,vol.shape[2]//2-64:vol.shape[2]//2+64]
-                        # else:
-                        #     # pad
-                        #     vol = np.pad(vol, ((0,0),(0,0),(0, 128-vol.shape[2])), 'constant', constant_values=0)
-                        # np.save(patient_image_dir / nodule_name, lung_np_array)
-                        # np.save(patient_mask_dir / mask_name, mask[:,:,mask_index])
-                        np.save(IMAGE_DIR / nodule_name, resize_image(lung_np_array))
-                        np.save(MASK_DIR / mask_name, resize_mask(mask_list[current_index]))
-                        current_index +=1
-                    else:
-                        lung_np_array = vol[:,:,slice]
-                        lung_np_array = ct_normalize(lung_np_array, slope, intercept)
-                        lung_mask = np.zeros_like(lung_np_array)
-                        
-                        nodule_name = "{}/{}_NI001_slice{}".format(pid,pid[-4:],prefix[slice])
-                        mask_name = "{}/{}_MA001_slice{}".format(pid,pid[-4:],prefix[slice])
-                        meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True]
-                        self.save_meta(meta_list)
-                        # np.save(patient_image_dir / nodule_name, lung_np_array)
-                        # np.save(patient_mask_dir / mask_name, lung_mask)
-                        np.save(IMAGE_DIR / nodule_name, resize_image(lung_np_array))
-                        np.save(MASK_DIR / mask_name, resize_mask(lung_mask))
-
+                        np.save(patient_image_dir / nodule_name,lung_segmented_np_array)
+                        np.save(patient_mask_dir / mask_name,mask[:,:,nodule_slice])
             else:
                 print("Clean Dataset",pid)
                 patient_clean_dir_image = CLEAN_DIR_IMAGE / pid
@@ -196,16 +141,10 @@ class MakeDataSet:
                 Path(patient_clean_dir_mask).mkdir(parents=True, exist_ok=True)
                 #There are patients that don't have nodule at all. Meaning, its a clean dataset. We need to use this for validation
                 for slice in range(vol.shape[2]):
-                    # if slice > 50:
-                    #     break
-                    # lung_segmented_np_array = segment_lung(vol[:,:,slice])
-                    image_path = os.path.join(dicom_path,files[slice])
-                    ds = pydicom.dcmread(image_path)
-                    intercept = ds.RescaleIntercept
-                    slope = ds.RescaleSlope
-
-                    lung_segmented_np_array = vol[:,:,slice]
-                    lung_segmented_np_array = ct_normalize(lung_segmented_np_array, slope, intercept)
+                    if slice >50:
+                        break
+                    lung_segmented_np_array = segment_lung(vol[:,:,slice])
+                    lung_segmented_np_array[lung_segmented_np_array==-0] =0
                     lung_mask = np.zeros_like(lung_segmented_np_array)
 
                     #CN= CleanNodule, CM = CleanMask
@@ -213,8 +152,9 @@ class MakeDataSet:
                     mask_name = "{}/{}_CM001_slice{}".format(pid,pid[-4:],prefix[slice])
                     meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True]
                     self.save_meta(meta_list)
-                    np.save(CLEAN_DIR_IMAGE / nodule_name, resize_image(lung_segmented_np_array))
-                    np.save(CLEAN_DIR_MASK / mask_name, resize_mask(lung_mask))
+                    np.save(patient_clean_dir_image / nodule_name, lung_segmented_np_array)
+                    np.save(patient_clean_dir_mask / mask_name, lung_mask)
+
 
 
         print("Saved Meta data")
