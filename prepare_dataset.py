@@ -11,7 +11,7 @@ from tqdm import tqdm
 from statistics import median_high
 import pydicom
 from pydicom.data import get_testdata_file
-from utils import is_dir_path,segment_lung, resize_image, resize_mask, ct_normalize
+from utils import is_dir_path,segment_lung, resize_image, resize_mask, ct_normalize, padding_tensor
 from pylidc.utils import consensus
 from PIL import Image
 import cv2
@@ -171,10 +171,7 @@ class MakeDataSet:
                     else:
                         lung_np_array = vol[:,:,slice]
                         lung_np_array = ct_normalize(lung_np_array, slope, intercept)
-                        # lung_mask = np.zeros_like(lung_np_array)
                         # meta_list.append([pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True])
-                        # np.save(patient_image_dir / nodule_name, lung_np_array)
-                        # np.save(patient_mask_dir / mask_name, lung_mask)
                         lung_np_tensor.append(resize_image(lung_np_array))
                         mask_np_tensor.append(np.zeros_like(resize_image(lung_np_array)))
 
@@ -186,18 +183,14 @@ class MakeDataSet:
                     lung_np_tensor = lung_np_tensor[length // 2 - 64:length // 2 + 64,:,:]
                     mask_np_tensor = mask_np_tensor[length // 2 - 64:length // 2 + 64,:,:]
                     for meta in meta_list:
-                        meta[1] = meta[1] - (length//2-64)
+                        meta[1] = meta[1] - (length // 2 - 64)
                         meta[2] = prefix[meta[1]]
                         self.save_meta(meta)
 
                 elif length < 128:
                     # padding
-                    padding_needed = 128 - length
-                    padding_left = padding_needed // 2
-                    padding_right = padding_needed - padding_left
-                    lung_np_tensor = np.concatenate((padding_left * [np.zeros((128, 128))],lung_np_tensor,padding_right * [np.zeros((128, 128))]), axis=0)
-                    mask_np_tensor = np.concatenate((padding_left * [np.zeros((128, 128))], mask_np_tensor, padding_right * [np.zeros((128, 128))]), axis=0)
-                    
+                    lung_np_tensor, padding_left, padding_right = padding_tensor(lung_np_tensor)
+                    mask_np_tensor, padding_left, padding_right = padding_tensor(mask_np_tensor)
                     for meta in meta_list:
                         meta[1] = meta[1] + padding_left
                         meta[2] = prefix[meta[1]]
@@ -237,11 +230,8 @@ class MakeDataSet:
 
                 elif length < 128:
                     # padding
-                    padding_needed = 128 - vol.shape[2]
-                    padding_left = padding_needed // 2
-                    padding_right = padding_needed - padding_left
-                    lung_np_tensor = np.concatenate((padding_left * [np.zeros((128, 128))], lung_np_tensor, padding_right * [np.zeros((128, 128))]), axis=0)
-                    mask_np_tensor = np.concatenate((padding_left * [np.zeros((128, 128))], mask_np_tensor, padding_right * [np.zeros((128, 128))]), axis=0)
+                    lung_np_tensor, _, _ = padding_tensor(lung_np_tensor)
+                    mask_np_tensor, _, _ = padding_tensor(mask_np_tensor)
                 np.save(CLEAN_DIR_IMAGE / nodule_name, lung_np_tensor)
                 np.save(CLEAN_DIR_MASK / mask_name, np.zeros_like(lung_np_tensor))
 
