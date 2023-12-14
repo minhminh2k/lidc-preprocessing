@@ -192,11 +192,12 @@ class MakeDataSet:
 
                 elif length < 128:
                     # padding
-                    padding_needed = 128 - vol.shape[2]
+                    padding_needed = 128 - length
                     padding_left = padding_needed // 2
                     padding_right = padding_needed - padding_left
-                    lung_np_tensor = padding_left * np.zeros(1, 128, 128) + lung_np_tensor + padding_right * np.zeros(1, 128, 128)
-                    mask_np_tensor = padding_left * np.zeros(1, 128, 128) + mask_np_tensor + padding_right * np.zeros(1, 128, 128)
+                    lung_np_tensor = np.concatenate((padding_left * [np.zeros((128, 128))],lung_np_tensor,padding_right * [np.zeros((128, 128))]), axis=0)
+                    mask_np_tensor = np.concatenate((padding_left * [np.zeros((128, 128))], mask_np_tensor, padding_right * [np.zeros((128, 128))]), axis=0)
+                    
                     for meta in meta_list:
                         meta[1] = meta[1] + padding_left
                         meta[2] = prefix[meta[1]]
@@ -239,8 +240,8 @@ class MakeDataSet:
                     padding_needed = 128 - vol.shape[2]
                     padding_left = padding_needed // 2
                     padding_right = padding_needed - padding_left
-                    lung_np_tensor = padding_left * np.zeros(1, 128, 128) + lung_np_tensor + padding_right * np.zeros(1, 128, 128)
-                    mask_np_tensor = padding_left * np.zeros(1, 128, 128) + mask_np_tensor + padding_right * np.zeros(1, 128, 128)
+                    lung_np_tensor = np.concatenate((padding_left * [np.zeros((128, 128))], lung_np_tensor, padding_right * [np.zeros((128, 128))]), axis=0)
+                    mask_np_tensor = np.concatenate((padding_left * [np.zeros((128, 128))], mask_np_tensor, padding_right * [np.zeros((128, 128))]), axis=0)
                 np.save(CLEAN_DIR_IMAGE / nodule_name, lung_np_tensor)
                 np.save(CLEAN_DIR_MASK / mask_name, np.zeros_like(lung_np_tensor))
 
