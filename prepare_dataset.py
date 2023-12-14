@@ -141,6 +141,11 @@ class MakeDataSet:
                         malignancy_list.append(malignancy)
                         cancer_label_list.append(cancer_label)
                 current_index = 0
+                lung_np_tensor = []
+                mask_np_tensor = []
+                meta_list = []
+                nodule_name = "{}/{}_NI001".format(pid,pid[-4:])
+                mask_name = "{}/{}_MA001".format(pid,pid[-4:])
                 for slice in range(vol.shape[2]):
                     image_path = os.path.join(dicom_path,files[slice])
                     ds = pydicom.dcmread(image_path)
@@ -150,44 +155,55 @@ class MakeDataSet:
                         lung_np_array = vol[:,:,slice]
                         lung_np_array = ct_normalize(lung_np_array, slope, intercept)
 
-                        nodule_name = "{}/{}_NI001_slice{}".format(pid,pid[-4:],prefix[slice])
-                        mask_name = "{}/{}_MA001_slice{}".format(pid,pid[-4:],prefix[slice])
-                        meta_list = [
+                        meta_list.append([
                             pid[-4:],
-                            nodule_idx,
+                            slice,
                             prefix[slice],
                             nodule_name,
                             mask_name,
                             malignancy_list[current_index],
                             cancer_label_list[current_index],
-                            False]
-
-                        self.save_meta(meta_list)
-                        # if vol.shape[2] > 128:
-                        #     # center crop
-                        #     vol = vol[:,:,vol.shape[2]//2-64:vol.shape[2]//2+64]
-                        # else:
-                        #     # pad
-                        #     vol = np.pad(vol, ((0,0),(0,0),(0, 128-vol.shape[2])), 'constant', constant_values=0)
-                        # np.save(patient_image_dir / nodule_name, lung_np_array)
-                        # np.save(patient_mask_dir / mask_name, mask[:,:,mask_index])
-                        np.save(IMAGE_DIR / nodule_name, resize_image(lung_np_array))
-                        np.save(MASK_DIR / mask_name, resize_mask(mask_list[current_index]))
+                            False
+                        ])
+                        lung_np_tensor.append(resize_image(lung_np_array))
+                        mask_np_tensor.append(resize_mask(mask_list[current_index]))
                         current_index +=1
                     else:
                         lung_np_array = vol[:,:,slice]
                         lung_np_array = ct_normalize(lung_np_array, slope, intercept)
-                        lung_mask = np.zeros_like(lung_np_array)
-                        
-                        nodule_name = "{}/{}_NI001_slice{}".format(pid,pid[-4:],prefix[slice])
-                        mask_name = "{}/{}_MA001_slice{}".format(pid,pid[-4:],prefix[slice])
-                        meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True]
-                        self.save_meta(meta_list)
+                        # lung_mask = np.zeros_like(lung_np_array)
+                        # meta_list.append([pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True])
                         # np.save(patient_image_dir / nodule_name, lung_np_array)
                         # np.save(patient_mask_dir / mask_name, lung_mask)
-                        np.save(IMAGE_DIR / nodule_name, resize_image(lung_np_array))
-                        np.save(MASK_DIR / mask_name, resize_mask(lung_mask))
+                        lung_np_tensor.append(resize_image(lung_np_array))
+                        mask_np_tensor.append(np.zeros_like(resize_image(lung_np_array)))
 
+                lung_np_tensor = np.stack(lung_np_tensor, axis=0)
+                mask_np_tensor = np.stack(mask_np_tensor, axis=0)
+                length = lung_np_tensor.shape[0]
+                if length > 128:
+                    # center crop
+                    lung_np_tensor = lung_np_tensor[length // 2 - 64:length // 2 + 64,:,:]
+                    mask_np_tensor = mask_np_tensor[length // 2 - 64:length // 2 + 64,:,:]
+                    for meta in meta_list:
+                        meta[1] = meta[1] - (length//2-64)
+                        meta[2] = prefix[meta[1]]
+                        self.save_meta(meta)
+
+                elif length < 128:
+                    # padding
+                    padding_needed = 128 - vol.shape[2]
+                    padding_left = padding_needed // 2
+                    padding_right = padding_needed - padding_left
+                    lung_np_tensor = padding_left * np.zeros(1, 128, 128) + lung_np_tensor + padding_right * np.zeros(1, 128, 128)
+                    mask_np_tensor = padding_left * np.zeros(1, 128, 128) + mask_np_tensor + padding_right * np.zeros(1, 128, 128)
+                    for meta in meta_list:
+                        meta[1] = meta[1] + padding_left
+                        meta[2] = prefix[meta[1]]
+                        self.save_meta(meta)
+
+                np.save(IMAGE_DIR / nodule_name, lung_np_tensor)
+                np.save(MASK_DIR / mask_name, mask_np_tensor) 
             else:
                 print("Clean Dataset",pid)
                 patient_clean_dir_image = CLEAN_DIR_IMAGE / pid
@@ -195,10 +211,10 @@ class MakeDataSet:
                 Path(patient_clean_dir_image).mkdir(parents=True, exist_ok=True)
                 Path(patient_clean_dir_mask).mkdir(parents=True, exist_ok=True)
                 #There are patients that don't have nodule at all. Meaning, its a clean dataset. We need to use this for validation
+                lung_np_tensor = []
+                nodule_name = "{}/{}_CN001".format(pid,pid[-4:])
+                mask_name = "{}/{}_CM001".format(pid,pid[-4:])
                 for slice in range(vol.shape[2]):
-                    # if slice > 50:
-                    #     break
-                    # lung_segmented_np_array = segment_lung(vol[:,:,slice])
                     image_path = os.path.join(dicom_path,files[slice])
                     ds = pydicom.dcmread(image_path)
                     intercept = ds.RescaleIntercept
@@ -206,15 +222,27 @@ class MakeDataSet:
 
                     lung_segmented_np_array = vol[:,:,slice]
                     lung_segmented_np_array = ct_normalize(lung_segmented_np_array, slope, intercept)
-                    lung_mask = np.zeros_like(lung_segmented_np_array)
+                    lung_np_tensor.append(resize_image(lung_segmented_np_array))
 
                     #CN= CleanNodule, CM = CleanMask
-                    nodule_name = "{}/{}_CN001_slice{}".format(pid,pid[-4:],prefix[slice])
-                    mask_name = "{}/{}_CM001_slice{}".format(pid,pid[-4:],prefix[slice])
-                    meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True]
-                    self.save_meta(meta_list)
-                    np.save(CLEAN_DIR_IMAGE / nodule_name, resize_image(lung_segmented_np_array))
-                    np.save(CLEAN_DIR_MASK / mask_name, resize_mask(lung_mask))
+                    # meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True]
+
+                lung_np_tensor = np.stack(lung_np_tensor, axis=0)
+                length = lung_np_tensor.shape[0]
+                if length > 128:
+                    # center crop
+                    lung_np_tensor = lung_np_tensor[length // 2 - 64:length // 2 + 64,:,:]
+                    mask_np_tensor = mask_np_tensor[length // 2 - 64:length // 2 + 64,:,:]
+
+                elif length < 128:
+                    # padding
+                    padding_needed = 128 - vol.shape[2]
+                    padding_left = padding_needed // 2
+                    padding_right = padding_needed - padding_left
+                    lung_np_tensor = padding_left * np.zeros(1, 128, 128) + lung_np_tensor + padding_right * np.zeros(1, 128, 128)
+                    mask_np_tensor = padding_left * np.zeros(1, 128, 128) + mask_np_tensor + padding_right * np.zeros(1, 128, 128)
+                np.save(CLEAN_DIR_IMAGE / nodule_name, lung_np_tensor)
+                np.save(CLEAN_DIR_MASK / mask_name, np.zeros_like(lung_np_tensor))
 
 
         print("Saved Meta data")
