@@ -226,12 +226,9 @@ class MakeDataSet:
                 if length > 128:
                     # center crop
                     lung_np_tensor = lung_np_tensor[length // 2 - 64:length // 2 + 64,:,:]
-                    mask_np_tensor = mask_np_tensor[length // 2 - 64:length // 2 + 64,:,:]
-
                 elif length < 128:
                     # padding
                     lung_np_tensor, _, _ = padding_tensor(lung_np_tensor)
-                    mask_np_tensor, _, _ = padding_tensor(mask_np_tensor)
                 np.save(CLEAN_DIR_IMAGE / nodule_name, lung_np_tensor)
                 np.save(CLEAN_DIR_MASK / mask_name, np.zeros_like(lung_np_tensor))
 
