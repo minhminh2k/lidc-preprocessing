@@ -87,10 +87,11 @@ def padding_tensor(t):
     padding_needed = 128 - t.shape[0]
     padding_left = padding_needed // 2
     padding_right = padding_needed - padding_left
+    
     if padding_left == 0:
-        t = np.concatenate((t, padding_right * [np.zeros((128, 128))]), axis=0)
+        t = np.concatenate((t, padding_right * [t[0]]), axis=0)
     elif padding_right == 0:
-        t = np.concatenate((padding_left * [np.zeros((128, 128))], t), axis=0)
+        t = np.concatenate((padding_left * [t[1]], t), axis=0)
     else:
-        t = np.concatenate((padding_left * [np.zeros((128, 128))], t, padding_right * [np.zeros((128, 128))]), axis=0)
+        t = np.concatenate((padding_left * [t[0]], t, padding_right * [t[1]]), axis=0)
     return t, padding_left, padding_right
