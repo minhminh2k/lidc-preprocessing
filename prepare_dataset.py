@@ -94,7 +94,6 @@ class MakeDataSet:
         CLEAN_DIR_IMAGE = Path(self.clean_path_img)
         CLEAN_DIR_MASK = Path(self.clean_path_mask)
 
-
         for patient in tqdm(self.IDRI_list):
             pid = patient #LIDC-IDRI-0001~
             # from IPython import embed; embed()
@@ -136,10 +135,15 @@ class MakeDataSet:
                     for nodule_slice in range(mask.shape[2]):
                         if np.sum(mask[:,:,nodule_slice]) <= self.mask_threshold:
                             continue
-                        nodule_idxes.append(slices[nodule_slice])                            
-                        mask_list.append(mask[:,:,nodule_slice])
-                        malignancy_list.append(malignancy)
-                        cancer_label_list.append(cancer_label)
+                        if slices[nodule_slice] not in nodule_idxes:
+                            nodule_idxes.append(slices[nodule_slice])                            
+                            mask_list.append(mask[:,:,nodule_slice])
+                            malignancy_list.append(malignancy)
+                            cancer_label_list.append(cancer_label)
+                        else:
+                            mask_list[nodule_idxes.index(slices[nodule_slice])] = np.logical_or(mask_list[nodule_idxes.index(slices[nodule_slice])],mask[:,:,nodule_slice])
+                            cancer_label_list[nodule_idxes.index(slices[nodule_slice])] = cancer_label or cancer_label_list[nodule_idxes.index(slices[nodule_slice])]                       
+                
                 current_index = 0
                 lung_np_tensor = []
                 mask_np_tensor = []
