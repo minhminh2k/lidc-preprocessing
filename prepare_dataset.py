@@ -144,7 +144,6 @@ class MakeDataSet:
                             mask_list[nodule_idxes.index(slices[nodule_slice])] = np.logical_or(mask_list[nodule_idxes.index(slices[nodule_slice])],mask[:,:,nodule_slice])
                             cancer_label_list[nodule_idxes.index(slices[nodule_slice])] = cancer_label or cancer_label_list[nodule_idxes.index(slices[nodule_slice])]                       
                 
-                current_index = 0
                 lung_np_tensor = []
                 mask_np_tensor = []
                 meta_list = []
@@ -158,6 +157,7 @@ class MakeDataSet:
                     if slice in nodule_idxes:
                         lung_np_array = vol[:,:,slice]
                         lung_np_array = ct_normalize(lung_np_array, slope, intercept)
+                        current_index = nodule_idxes.index(slice)
 
                         meta_list.append([
                             pid[-4:],
@@ -171,7 +171,6 @@ class MakeDataSet:
                         ])
                         lung_np_tensor.append(resize_image(lung_np_array))
                         mask_np_tensor.append(resize_mask(mask_list[current_index]))
-                        current_index +=1
                     else:
                         lung_np_array = vol[:,:,slice]
                         lung_np_array = ct_normalize(lung_np_array, slope, intercept)
