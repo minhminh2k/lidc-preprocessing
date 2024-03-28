@@ -94,98 +94,9 @@ class MakeDataSet:
         CLEAN_DIR_IMAGE = Path(self.clean_path_img)
         CLEAN_DIR_MASK = Path(self.clean_path_mask)
 
-        CHECK_LIST = [
-            "LIDC-IDRI-0015",
-            "LIDC-IDRI-0019",
-            "LIDC-IDRI-0025",
-            "LIDC-IDRI-0066",
-            "LIDC-IDRI-0072",
-            "LIDC-IDRI-0094",
-            "LIDC-IDRI-0180",
-            "LIDC-IDRI-0280",
-            "LIDC-IDRI-0299",
-            "LIDC-IDRI-0339",
-            "LIDC-IDRI-0340",
-            "LIDC-IDRI-0352",
-            "LIDC-IDRI-0369",
-            "LIDC-IDRI-0371",
-            "LIDC-IDRI-0376",
-            "LIDC-IDRI-0384",
-            "LIDC-IDRI-0385",
-            "LIDC-IDRI-0411",
-            "LIDC-IDRI-0432",
-            "LIDC-IDRI-0438",
-            "LIDC-IDRI-0443",
-            "LIDC-IDRI-0463",
-            "LIDC-IDRI-0467",
-            "LIDC-IDRI-0468",
-            "LIDC-IDRI-0478",
-            "LIDC-IDRI-0488",
-            "LIDC-IDRI-0498",
-            "LIDC-IDRI-0532",
-            "LIDC-IDRI-0537",
-            "LIDC-IDRI-0538",
-            "LIDC-IDRI-0543",
-            "LIDC-IDRI-0545",
-            "LIDC-IDRI-0551",
-            "LIDC-IDRI-0553",
-            "LIDC-IDRI-0554",
-            "LIDC-IDRI-0562",
-            "LIDC-IDRI-0572",
-            "LIDC-IDRI-0591",
-            "LIDC-IDRI-0606",
-            "LIDC-IDRI-0613",
-            "LIDC-IDRI-0621",
-            "LIDC-IDRI-0633",
-            "LIDC-IDRI-0639",
-            "LIDC-IDRI-0648",
-            "LIDC-IDRI-0650",
-            "LIDC-IDRI-0657",
-            "LIDC-IDRI-0658",
-            "LIDC-IDRI-0664",
-            "LIDC-IDRI-0669",
-            "LIDC-IDRI-0684",
-            "LIDC-IDRI-0696",
-            "LIDC-IDRI-0698",
-            "LIDC-IDRI-0715",
-            "LIDC-IDRI-0725",
-            "LIDC-IDRI-0734",
-            "LIDC-IDRI-0756",
-            "LIDC-IDRI-0758",
-            "LIDC-IDRI-0769",
-            "LIDC-IDRI-0778",
-            "LIDC-IDRI-0781",
-            "LIDC-IDRI-0794",
-            "LIDC-IDRI-0799",
-            "LIDC-IDRI-0802",
-            "LIDC-IDRI-0805",
-            "LIDC-IDRI-0818",
-            "LIDC-IDRI-0819",
-            "LIDC-IDRI-0821",
-            "LIDC-IDRI-0826",
-            "LIDC-IDRI-0831",
-            "LIDC-IDRI-0856",
-            "LIDC-IDRI-0857",
-            "LIDC-IDRI-0895",
-            "LIDC-IDRI-0908",
-            "LIDC-IDRI-0920",
-            "LIDC-IDRI-0921",
-            "LIDC-IDRI-0922",
-            "LIDC-IDRI-0932",
-            "LIDC-IDRI-0943",
-            "LIDC-IDRI-0950",
-            "LIDC-IDRI-0971",
-            "LIDC-IDRI-0981",
-            "LIDC-IDRI-0982",
-            "LIDC-IDRI-0989",
-            "LIDC-IDRI-1006",
-        ]
-
         for patient in tqdm(self.IDRI_list):
             pid = patient #LIDC-IDRI-0001~
-            if not pid in CHECK_LIST:
-                continue
-            # from IPython import embed; embed()
+
             scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first()
             nodules_annotation = scan.cluster_annotations()
             vol = scan.to_volume()
@@ -283,30 +194,33 @@ class MakeDataSet:
                     # Determine the essential range to include
                     min_mask_index = min(mask_indices) if mask_indices else 0
                     max_mask_index = max(mask_indices) if mask_indices else length
-
                     # Determine the desired crop size
                     desired_crop_size = 128  # Example: 128 slices
+                    if max_mask_index - min_mask_index > desired_crop_size:
+                        lung_np_tensor = lung_np_tensor[min_mask_index:min_mask_index + desired_crop_size, :, :]
+                        mask_np_tensor = mask_np_tensor[min_mask_index:min_mask_index + desired_crop_size, :, :]
+                    else:
 
-                    # Calculate center point of the mask indices to try centering the crop around this region
-                    mask_center = (min_mask_index + max_mask_index) // 2
+                        # Calculate center point of the mask indices to try centering the crop around this region
+                        mask_center = (min_mask_index + max_mask_index) // 2
 
-                    # Calculate the start and end points of the crop
-                    crop_start = max(0, min(mask_center - desired_crop_size // 2, length - desired_crop_size))
-                    crop_end = min(length, max(mask_center + desired_crop_size // 2, desired_crop_size))
+                        # Calculate the start and end points of the crop
+                        crop_start = max(0, min(mask_center - desired_crop_size // 2, length - desired_crop_size))
+                        crop_end = min(length, max(mask_center + desired_crop_size // 2, desired_crop_size))
 
-                    # Adjust if the essential mask indices span is larger than the crop size
-                    if (max_mask_index - min_mask_index) > desired_crop_size:
-                        # Here you might need to decide on a policy, for example, expand the crop to include all or just move the window
-                        crop_start = min_mask_index
-                        crop_end = min(length, max_mask_index)
-                        if (crop_end - crop_start) < desired_crop_size:  # If possible, expand to desired crop size
-                            expansion = desired_crop_size - (crop_end - crop_start)
-                            crop_start = max(0, crop_start - expansion // 2)
-                            crop_end = min(length, crop_end + expansion // 2)
+                        # Adjust if the essential mask indices span is larger than the crop size
+                        if (max_mask_index - min_mask_index) > desired_crop_size:
+                            # Here you might need to decide on a policy, for example, expand the crop to include all or just move the window
+                            crop_start = min_mask_index
+                            crop_end = min(length, max_mask_index)
+                            if (crop_end - crop_start) < desired_crop_size:  # If possible, expand to desired crop size
+                                expansion = desired_crop_size - (crop_end - crop_start)
+                                crop_start = max(0, crop_start - expansion // 2)
+                                crop_end = min(length, crop_end + expansion // 2)
 
-                    # Apply the crop
-                    lung_np_tensor = lung_np_tensor[crop_start:crop_end, :, :]
-                    mask_np_tensor = mask_np_tensor[crop_start:crop_end, :, :]
+                        # Apply the crop
+                        lung_np_tensor = lung_np_tensor[crop_start:crop_end, :, :]
+                        mask_np_tensor = mask_np_tensor[crop_start:crop_end, :, :]
                     for meta in meta_list:
                         meta[1] = meta[1] - (length // 2 - 64)
                         meta[2] = prefix[meta[1]]
