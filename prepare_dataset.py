@@ -158,7 +158,6 @@ class MakeDataSet:
                         lung_np_array = vol[:,:,slice]
                         lung_np_array = ct_normalize(lung_np_array, slope, intercept)
                         current_index = nodule_idxes.index(slice)
-
                         meta_list.append([
                             pid[-4:],
                             slice,
