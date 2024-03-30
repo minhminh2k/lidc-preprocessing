@@ -20,6 +20,7 @@ if __name__ == "__main__":
         'CLEAN_PATH_MASK':'./data/Clean/Mask',
         # CSV file containing nodule information, malignancy, train test split
         'META_PATH': './data/Meta/',
+        'IMAGE_SEGMENTATION_PATH':'./data/Image_Segmentation',
         # Mask Threshold is the np.sum(MASK) threshold. Some Masks are too small. We remove these small images,masks as they might act as outliers
         # The threshold 8 was decided by empirical evaluation.
         'Mask_Threshold':8

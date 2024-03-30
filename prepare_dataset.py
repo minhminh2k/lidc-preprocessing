@@ -29,7 +29,7 @@ IMAGE_DIR = is_dir_path(parser.get('prepare_dataset','IMAGE_PATH'))
 CLEAN_DIR_IMAGE = is_dir_path(parser.get('prepare_dataset','CLEAN_PATH_IMAGE'))
 CLEAN_DIR_MASK = is_dir_path(parser.get('prepare_dataset','CLEAN_PATH_MASK'))
 META_DIR = is_dir_path(parser.get('prepare_dataset','META_PATH'))
-
+IMAGE_SEGMENTATION_DIR = is_dir_path(parser.get('prepare_dataset','IMAGE_SEGMENTATION_PATH'))
 #Hyper Parameter setting for prepare dataset function
 mask_threshold = parser.getint('prepare_dataset','Mask_Threshold')
 
@@ -38,12 +38,13 @@ confidence_level = parser.getfloat('pylidc','confidence_level')
 padding = parser.getint('pylidc','padding_size')
 
 class MakeDataSet:
-    def __init__(self, LIDC_Patients_list, IMAGE_DIR, MASK_DIR,CLEAN_DIR_IMAGE,CLEAN_DIR_MASK,META_DIR, mask_threshold, padding, confidence_level=0.5):
+    def __init__(self, LIDC_Patients_list, IMAGE_DIR, MASK_DIR,CLEAN_DIR_IMAGE,CLEAN_DIR_MASK,IMAGE_SEGMENTATION_DIR,META_DIR, mask_threshold, padding, confidence_level=0.5):
         self.IDRI_list = LIDC_Patients_list
         self.img_path = IMAGE_DIR
         self.mask_path = MASK_DIR
         self.clean_path_img = CLEAN_DIR_IMAGE
         self.clean_path_mask = CLEAN_DIR_MASK
+        self.image_segmentation_dir = IMAGE_SEGMENTATION_DIR
         self.meta_path = META_DIR
         self.mask_threshold = mask_threshold
         self.c_level = confidence_level
@@ -93,6 +94,7 @@ class MakeDataSet:
         MASK_DIR = Path(self.mask_path)
         CLEAN_DIR_IMAGE = Path(self.clean_path_img)
         CLEAN_DIR_MASK = Path(self.clean_path_mask)
+        IMAGE_SEGMENTATION_DIR = Path(self.image_segmentation_dir)
 
         for patient in tqdm(self.IDRI_list):
             pid = patient #LIDC-IDRI-0001~
@@ -114,7 +116,9 @@ class MakeDataSet:
             # from IPython import embed; embed()
             patient_image_dir = IMAGE_DIR / pid
             patient_mask_dir = MASK_DIR / pid
+            patient_segmentation_dir = IMAGE_SEGMENTATION_DIR / pid
             Path(patient_image_dir).mkdir(parents=True, exist_ok=True)
+            Path(patient_segmentation_dir).mkdir(parents=True, exist_ok=True)
             Path(patient_mask_dir).mkdir(parents=True, exist_ok=True)
 
             if len(nodules_annotation) > 0:
@@ -145,6 +149,7 @@ class MakeDataSet:
                             cancer_label_list[nodule_idxes.index(slices[nodule_slice])] = cancer_label or cancer_label_list[nodule_idxes.index(slices[nodule_slice])]                       
                 
                 lung_np_tensor = []
+                segmentation_np_tensor = []
                 mask_np_tensor = []
                 meta_list = []
                 nodule_name = "{}/{}_NI001".format(pid,pid[-4:])
@@ -156,6 +161,7 @@ class MakeDataSet:
                     slope = ds.RescaleSlope
                     if slice in nodule_idxes:
                         lung_np_array = vol[:,:,slice]
+                        segmentation_np_array = ct_normalize(segment_lung(lung_np_array), slope, intercept)
                         lung_np_array = ct_normalize(lung_np_array, slope, intercept)
                         current_index = nodule_idxes.index(slice)
                         meta_list.append([
@@ -169,15 +175,19 @@ class MakeDataSet:
                             False
                         ])
                         lung_np_tensor.append(resize_image(lung_np_array))
+                        segmentation_np_tensor.append(resize_image(segmentation_np_array))
                         mask_np_tensor.append(resize_mask(mask_list[current_index]))
                     else:
                         lung_np_array = vol[:,:,slice]
+                        segmentation_np_array = ct_normalize(segment_lung(lung_np_array), slope, intercept)
                         lung_np_array = ct_normalize(lung_np_array, slope, intercept)
                         # meta_list.append([pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True])
                         lung_np_tensor.append(resize_image(lung_np_array))
+                        segmentation_np_tensor.append(resize_image(segmentation_np_array))
                         mask_np_tensor.append(np.zeros_like(resize_image(lung_np_array)))
 
                 lung_np_tensor = np.stack(lung_np_tensor, axis=0)
+                segmentation_np_tensor = np.stack(segmentation_np_tensor, axis=0)
                 mask_np_tensor = np.stack(mask_np_tensor, axis=0)
                 length = lung_np_tensor.shape[0]
                 if length > 128:
@@ -197,6 +207,7 @@ class MakeDataSet:
                     desired_crop_size = 128  # Example: 128 slices
                     if max_mask_index - min_mask_index > desired_crop_size:
                         lung_np_tensor = lung_np_tensor[min_mask_index:min_mask_index + desired_crop_size, :, :]
+                        segmentation_np_tensor = segmentation_np_tensor[min_mask_index:min_mask_index + desired_crop_size, :, :]
                         mask_np_tensor = mask_np_tensor[min_mask_index:min_mask_index + desired_crop_size, :, :]
                     else:
 
@@ -219,6 +230,7 @@ class MakeDataSet:
 
                         # Apply the crop
                         lung_np_tensor = lung_np_tensor[crop_start:crop_end, :, :]
+                        segmentation_np_tensor = segmentation_np_tensor[crop_start:crop_end, :, :]
                         mask_np_tensor = mask_np_tensor[crop_start:crop_end, :, :]
                     for meta in meta_list:
                         meta[1] = meta[1] - (length // 2 - 64)
@@ -235,15 +247,19 @@ class MakeDataSet:
                         self.save_meta(meta)
 
                 np.save(IMAGE_DIR / nodule_name, lung_np_tensor)
+                np.save(IMAGE_SEGMENTATION_DIR / nodule_name, segmentation_np_tensor)
                 np.save(MASK_DIR / mask_name, mask_np_tensor) 
             else:
                 print("Clean Dataset",pid)
                 patient_clean_dir_image = CLEAN_DIR_IMAGE / pid
+                patient_clean_dir_segmentation = IMAGE_SEGMENTATION_DIR / pid
                 patient_clean_dir_mask = CLEAN_DIR_MASK / pid
                 Path(patient_clean_dir_image).mkdir(parents=True, exist_ok=True)
+                Path(patient_clean_dir_segmentation).mkdir(parents=True, exist_ok=True)
                 Path(patient_clean_dir_mask).mkdir(parents=True, exist_ok=True)
                 #There are patients that don't have nodule at all. Meaning, its a clean dataset. We need to use this for validation
                 lung_np_tensor = []
+                segmentation_np_tensor = []
                 nodule_name = "{}/{}_CN001".format(pid,pid[-4:])
                 mask_name = "{}/{}_CM001".format(pid,pid[-4:])
                 for slice in range(vol.shape[2]):
@@ -253,12 +269,14 @@ class MakeDataSet:
                     slope = ds.RescaleSlope
 
                     lung_segmented_np_array = vol[:,:,slice]
+                    segmentation_np_array = ct_normalize(segment_lung(lung_segmented_np_array), slope, intercept)
                     lung_segmented_np_array = ct_normalize(lung_segmented_np_array, slope, intercept)
+                    segmentation_np_tensor.append(resize_image(segmentation_np_array))
                     lung_np_tensor.append(resize_image(lung_segmented_np_array))
 
                     #CN= CleanNodule, CM = CleanMask
                     # meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True]
-
+                segmentation_np_tensor = np.stack(segmentation_np_tensor, axis=0)
                 lung_np_tensor = np.stack(lung_np_tensor, axis=0)
                 length = lung_np_tensor.shape[0]
                 if length > 128:
@@ -268,6 +286,7 @@ class MakeDataSet:
                     # padding
                     lung_np_tensor, _, _ = padding_tensor(lung_np_tensor)
                 np.save(CLEAN_DIR_IMAGE / nodule_name, lung_np_tensor)
+                np.save(IMAGE_SEGMENTATION_DIR / nodule_name, segmentation_np_tensor)
                 np.save(CLEAN_DIR_MASK / mask_name, np.zeros_like(lung_np_tensor))
 
 
@@ -282,5 +301,5 @@ if __name__ == '__main__':
     LIDC_IDRI_list.sort()
 
 
-    test= MakeDataSet(LIDC_IDRI_list,IMAGE_DIR,MASK_DIR,CLEAN_DIR_IMAGE,CLEAN_DIR_MASK,META_DIR,mask_threshold,padding,confidence_level)
+    test= MakeDataSet(LIDC_IDRI_list,IMAGE_DIR,MASK_DIR,CLEAN_DIR_IMAGE,CLEAN_DIR_MASK, IMAGE_SEGMENTATION_DIR, META_DIR,mask_threshold,padding,confidence_level)
     test.prepare_dataset()
