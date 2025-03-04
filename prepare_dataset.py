@@ -98,13 +98,17 @@ class MakeDataSet:
 
         for patient in tqdm(self.IDRI_list):
             pid = patient #LIDC-IDRI-0001~
+            
+            # if pid[-4:] < 120:
+            #     continue
 
             scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first()
             nodules_annotation = scan.cluster_annotations()
-            vol = scan.to_volume()
+            vol = scan.to_volume() # 3D volume HU
+            np.save(f"/data/hpc/dqm/3D-SegClass-Medical/images/{pid}.npy", vol)
             dicom_path = scan.get_path_to_dicom_files()
             files = []
-            for f in os.listdir(dicom_path):
+            for f in sorted(os.listdir(dicom_path)):
                 if f.endswith('.dcm'):
                     files.append(f)
             # rescale_intercept = scan.image_dicom[0].RescaleIntercept
@@ -154,11 +158,15 @@ class MakeDataSet:
                 meta_list = []
                 nodule_name = "{}/{}_NI001".format(pid,pid[-4:])
                 mask_name = "{}/{}_MA001".format(pid,pid[-4:])
+                
+                print("Nodule idxes", nodule_idxes)
+                
                 for slice in range(vol.shape[2]):
                     image_path = os.path.join(dicom_path,files[slice])
+                    print(files[slice], slice)
                     ds = pydicom.dcmread(image_path)
                     intercept = ds.RescaleIntercept
-                    slope = ds.RescaleSlope
+                    slope = ds.RescaleSlope # 1
                     if slice in nodule_idxes:
                         lung_np_array = vol[:,:,slice]
                         segmentation_np_array = ct_normalize(segment_lung(lung_np_array), slope, intercept)
@@ -179,8 +187,12 @@ class MakeDataSet:
                         mask_np_tensor.append(resize_mask(mask_list[current_index]))
                     else:
                         lung_np_array = vol[:,:,slice]
+                        # np.save(f"/data/hpc/dqm/3D-SegClass-Medical/images/{pid}_{slice}.npy", vol)
+                        
                         segmentation_np_array = ct_normalize(segment_lung(lung_np_array), slope, intercept)
                         lung_np_array = ct_normalize(lung_np_array, slope, intercept)
+                        # np.save(f"/data/hpc/dqm/3D-SegClass-Medical/images/{pid}_{slice}_ct.npy", vol)
+                        
                         # meta_list.append([pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True])
                         lung_np_tensor.append(resize_image(lung_np_array))
                         segmentation_np_tensor.append(resize_image(segmentation_np_array))

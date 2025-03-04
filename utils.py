@@ -67,20 +67,20 @@ def segment_lung(img):
 def count_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-def resize_image(image, size=128):
+def resize_image(image, size=512):
     resized_image = cv2.resize(image, (size, size), interpolation=cv2.INTER_AREA)
     return resized_image
 
-def resize_mask(mask, size=128):
+def resize_mask(mask, size=512):
     resized_mask = cv2.resize(mask.astype(float), (size, size))
     resized_mask = resized_mask.astype(bool)
     return resized_mask
 
 def ct_normalize(image, slope, intercept):
-    image[image==-0] =0
-    image = image * slope + intercept
-    image[image > 400] = 400
-    image[image < -1000] = -1000
+    image[image==-0] = 0
+    # image = image * slope + intercept # Convert to HU 
+    # image[image > 400] = 400
+    # image[image < -1000] = -1000
     return image
 
 def padding_tensor(t):
@@ -89,9 +89,9 @@ def padding_tensor(t):
     padding_right = padding_needed - padding_left
     
     if padding_left == 0:
-        t = np.concatenate((t, padding_right * [t[0]]), axis=0)
+        t = np.concatenate((t, padding_right * [t[-1]]), axis=0)
     elif padding_right == 0:
-        t = np.concatenate((padding_left * [t[1]], t), axis=0)
+        t = np.concatenate((padding_left * [t[0]], t), axis=0)
     else:
-        t = np.concatenate((padding_left * [t[0]], t, padding_right * [t[1]]), axis=0)
+        t = np.concatenate((padding_left * [t[0]], t, padding_right * [t[-1]]), axis=0)
     return t, padding_left, padding_right
