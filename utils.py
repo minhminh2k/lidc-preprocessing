@@ -19,6 +19,7 @@ def segment_lung(img):
     """
     This segments the Lung Image(Don't get confused with lung nodule segmentation)
     """
+    image = img.copy()
     mean = np.mean(img)
     std = np.std(img)
     img = img-mean
@@ -62,17 +63,17 @@ def segment_lung(img):
         mask = mask + np.where(labels==N,1,0)
     mask = morphology.dilation(mask,np.ones([10,10])) # one last dilation
     # mask consists of 1 and 0. Thus by mutliplying with the orginial image, sections with 1 will remain
-    return mask*img
+    return mask*image
 
 def count_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-def resize_image(image, size=512):
-    resized_image = cv2.resize(image, (size, size), interpolation=cv2.INTER_AREA)
+def resize_image(image: np.ndarray, size: int = 512, interpolation=cv2.INTER_CUBIC):
+    resized_image = cv2.resize(image, (size, size), interpolation=interpolation)
     return resized_image
 
-def resize_mask(mask, size=512):
-    resized_mask = cv2.resize(mask.astype(float), (size, size))
+def resize_mask(mask: np.ndarray, size: int = 512, interpolation=cv2.INTER_CUBIC):
+    resized_mask = cv2.resize(mask.astype(float), (size, size), interpolation=interpolation)
     resized_mask = resized_mask.astype(bool)
     return resized_mask
 
@@ -82,6 +83,9 @@ def ct_normalize(image, slope, intercept):
     # image[image > 400] = 400
     # image[image < -1000] = -1000
     return image
+
+def HU_conversion(image, slope, intercept):
+    pass
 
 def padding_tensor(t):
     padding_needed = 128 - t.shape[0]

@@ -99,18 +99,30 @@ class MakeDataSet:
         for patient in tqdm(self.IDRI_list):
             pid = patient #LIDC-IDRI-0001~
             
-            # if pid[-4:] < 120:
-            #     continue
+            if int(pid[-4:]) != 5:
+                continue
 
-            scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first()
+            scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first() # If needed: pl.Scan.slice_thickness <= 1
             nodules_annotation = scan.cluster_annotations()
-            vol = scan.to_volume() # 3D volume HU
-            np.save(f"/data/hpc/dqm/3D-SegClass-Medical/images/{pid}.npy", vol)
+            # vol = scan.to_volume() # automatic covert to HU in pylidc version == 0.2.3
+            # np.save(f"/data/hpc/dqm/3D-SegClass-Medical/images/{pid}.npy", vol)
             dicom_path = scan.get_path_to_dicom_files()
-            files = []
-            for f in sorted(os.listdir(dicom_path)):
-                if f.endswith('.dcm'):
-                    files.append(f)
+            files = [fname for fname in os.listdir(dicom_path)
+                            if fname.endswith('.dcm') and not fname.startswith(".")] # Not in order by Instance Number
+                        
+            images = scan.load_all_dicom_images() # Instance Number: max_length -> 1 -> max_length.com -> 1.dcom
+            print("Slice Thickness, Spacing: ", images[0].SliceThickness, scan.slice_thickness)
+            print("Pixel spacing, Slice Spacing: ", scan.pixel_spacing, scan.slice_spacing)            
+            
+            vol = np.stack(
+                [
+                    x.pixel_array * x.RescaleSlope + x.RescaleIntercept
+                    for x in images
+                ],
+                axis=-1,
+            ).astype(np.int16)
+            
+            break 
             # rescale_intercept = scan.image_dicom[0].RescaleIntercept
             # rescale_slope = scan.image_dicom[0].RescaleSlope
             print("Patient ID: {} Dicom Shape: {} Number of Annotated Nodules: {}".format(pid,vol.shape,len(nodules_annotation)))
@@ -170,6 +182,13 @@ class MakeDataSet:
                     if slice in nodule_idxes:
                         lung_np_array = vol[:,:,slice]
                         segmentation_np_array = ct_normalize(segment_lung(lung_np_array), slope, intercept)
+                        
+                        print("Lung Max: ", segmentation_np_array.max())
+                        print("Lung Min: ", segmentation_np_array.min())
+                        
+                        print("Image Max: ", lung_np_array.max())
+                        print("Image Min: ", lung_np_array.min())
+                        
                         lung_np_array = ct_normalize(lung_np_array, slope, intercept)
                         current_index = nodule_idxes.index(slice)
                         meta_list.append([
