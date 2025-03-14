@@ -12,9 +12,8 @@ from statistics import median_high
 import pydicom
 from pydicom.data import get_testdata_file
 from utils import is_dir_path,segment_lung, resize_image, resize_mask, ct_normalize, padding_tensor
+from utils import HU_conversion, resample
 from pylidc.utils import consensus
-from PIL import Image
-import cv2
 
 warnings.filterwarnings(action='ignore')
 
@@ -99,28 +98,31 @@ class MakeDataSet:
         for patient in tqdm(self.IDRI_list):
             pid = patient #LIDC-IDRI-0001~
             
-            if int(pid[-4:]) != 5:
+            if int(pid[-4:]) != 1:
                 continue
 
             scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first() # If needed: pl.Scan.slice_thickness <= 1
             nodules_annotation = scan.cluster_annotations()
             # vol = scan.to_volume() # automatic covert to HU in pylidc version == 0.2.3
-            # np.save(f"/data/hpc/dqm/3D-SegClass-Medical/images/{pid}.npy", vol)
-            dicom_path = scan.get_path_to_dicom_files()
-            files = [fname for fname in os.listdir(dicom_path)
+            dicom_path = scan.get_path_to_dicom_files() # /data/hpc/huynhspm
+            
+            files = [os.path.join(dicom_path, fname) for fname in os.listdir(dicom_path)
                             if fname.endswith('.dcm') and not fname.startswith(".")] # Not in order by Instance Number
-                        
-            images = scan.load_all_dicom_images() # Instance Number: max_length -> 1 -> max_length.com -> 1.dcom
-            print("Slice Thickness, Spacing: ", images[0].SliceThickness, scan.slice_thickness)
+            # slices = [pydicom.dcmread(file) for file in files]
+            # slices.sort(key = lambda x: int(x.InstanceNumber)) # 1 -> max_length
+            
+            list_scans = scan.load_all_dicom_images() # Instance Number: max_length -> 1 -> max_length.com -> 1.dcom # Sort by ImagePositionPatient z coordinates
+            print("Slice Thickness, Scan Slice Thickness: ", list_scans[0].SliceThickness, scan.slice_thickness)
             print("Pixel spacing, Slice Spacing: ", scan.pixel_spacing, scan.slice_spacing)            
             
-            vol = np.stack(
-                [
-                    x.pixel_array * x.RescaleSlope + x.RescaleIntercept
-                    for x in images
-                ],
-                axis=-1,
-            ).astype(np.int16)
+            # Standardize slice thickness
+            for l in list_scans:
+                l.SliceThickness = scan.slice_thickness
+                        
+            vol = HU_conversion(list_scans)
+            print("Original shape: ", vol.shape)
+            vol, new_spacing = resample(vol, scan, [1,1,1])
+            print("Resample shape:", vol.shape, "New spacing", new_spacing)
             
             break 
             # rescale_intercept = scan.image_dicom[0].RescaleIntercept
