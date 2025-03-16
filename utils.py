@@ -184,7 +184,7 @@ def padding_tensor(t):
     return t
 
 
-def resample(image, scan, new_spacing=[1,1,1]) -> tuple[np.ndarray, tuple]:
+def resample(image, scan, new_spacing=[1,1,1]):
     # Determine current pixel spacing
     spacing = map(float, ([scan.slice_thickness] + [scan.pixel_spacing] + [scan.pixel_spacing]))
     spacing = np.array(list(spacing))

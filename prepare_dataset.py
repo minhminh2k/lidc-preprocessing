@@ -99,8 +99,8 @@ class MakeDataSet:
         for patient in tqdm(self.IDRI_list):
             pid = patient # LIDC-IDRI-0001~
             
-            if int(pid[-4:]) != 404 or int(pid[-4:]) != 28:
-                continue
+            # if int(pid[-4:]) != 404 and int(pid[-4:]) != 28:
+                # continue
 
             scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first() # If needed: pl.Scan.slice_thickness <= 1
             nodules_annotation = scan.cluster_annotations()
@@ -116,8 +116,8 @@ class MakeDataSet:
             # slices.sort(key = lambda x: int(x.InstanceNumber)) # 1 -> max_length
             
             list_scans = scan.load_all_dicom_images() # Instance Number: max_length -> 1 -> max_length.com -> 1.dcom # Sort by ImagePositionPatient z coordinates
-            # print("Slice Thickness, Scan Slice Thickness: ", list_scans[0].SliceThickness, scan.slice_thickness)
-            # print("Pixel spacing, Slice Spacing: ", scan.pixel_spacing, scan.slice_spacing)            
+            print("Slice Thickness, Scan Slice Thickness: ", list_scans[0].SliceThickness, scan.slice_thickness)
+            print("Pixel spacing, Slice Spacing: ", scan.pixel_spacing, scan.slice_spacing)            
             
             # Standardize slice thickness
             for l in list_scans:
