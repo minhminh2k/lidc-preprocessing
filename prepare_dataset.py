@@ -99,7 +99,7 @@ class MakeDataSet:
         for patient in tqdm(self.IDRI_list):
             pid = patient # LIDC-IDRI-0001~
             
-            if int(pid[-4:]) != 20:
+            if int(pid[-4:]) != 404 or int(pid[-4:]) != 28:
                 continue
 
             scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first() # If needed: pl.Scan.slice_thickness <= 1
@@ -127,7 +127,7 @@ class MakeDataSet:
             original_vol_shape = original_vol.shape
             print("Original shape: ", original_vol.shape)
             vol, new_spacing = resample(original_vol, scan, [1,1,1])
-            print("Resample shape:", vol.shape, "New spacing", new_spacing)
+            print("Resample shape:", vol.shape)
             
             # Resample to a common voxel spacing of 1 mm in all directions. 
             # This is to make sure that the voxel size is consistent across all patients
@@ -166,7 +166,7 @@ class MakeDataSet:
                 lung_np_tensor = []
                 segmentation_np_tensor = []
                 mask_np_tensor = []
-                meta_list = []
+                # meta_list = []
                 nodule_name = "{}/{}_NI001".format(pid,pid[-4:])
                 mask_name = "{}/{}_MA001".format(pid,pid[-4:])
                 
@@ -183,28 +183,18 @@ class MakeDataSet:
                 # Mask Volume
                 mask_volume = np.stack([m for m in mask_np_tensor])
                 mask_volume, new_spacing = resample(mask_volume, scan, [1, 1, 1])
-                
                 mask_np_tensor = []
                 
-                for slice in range(vol.shape[0]):
-                    print(slice)
-                    lung_np_array = vol[slice, :,:]
-                    segmentation_np_array = make_lungmask(lung_np_array)
-                    lung_np_array = normalize_clipped(lung_np_array)
-
-                    lung_np_tensor.append(resize_image(lung_np_array))
-                    segmentation_np_tensor.append(resize_image(segmentation_np_array))
-                    mask_np_tensor.append(resize_image(mask_volume[slice,:,:]))
-                    
-                lung_np_tensor = np.stack(lung_np_tensor, axis=0)
-                segmentation_np_tensor = np.stack(segmentation_np_tensor, axis=0)
-                mask_np_tensor = np.stack(mask_np_tensor, axis=0)
-                length = lung_np_tensor.shape[0] # depth
+                # Volume Depth
+                length = vol.shape[0]
+                
                 if length > 128:
                     mask_indices = []
-                    for i, m in enumerate(mask_np_tensor):
+                    for i, m in enumerate(mask_volume):
                         if m.sum() != 0:
                             mask_indices.append(i)
+                    
+                    print("Mask indices after resample", mask_indices)
                     # Example setup (for illustration)
                     # lung_np_tensor = np.random.rand(200, 512, 512)  # Your actual lung tensor
                     # mask_np_tensor = np.random.randint(0, 2, (200, 512, 512))  # Your actual mask tensor
@@ -216,7 +206,7 @@ class MakeDataSet:
                     
                     # Determine the desired crop size
                     desired_crop_size = 128  # Example: 128 slices
-                    margin = 20
+                    margin = 30
                     
                     if max_mask_index - min_mask_index + 1 >= desired_crop_size:
                         crop_start = max(0, min_mask_index - margin)
@@ -232,18 +222,45 @@ class MakeDataSet:
                         crop_start = max(0, crop_start - margin)
                         crop_end = min(length, crop_end + margin)
 
+                    print(f"Cropped from slice {crop_start} to {crop_end}.")
+                    
                     # Apply the crop
-                    lung_np_tensor = lung_np_tensor[crop_start:crop_end, :, :]
-                    segmentation_np_tensor = segmentation_np_tensor[crop_start:crop_end, :, :]
-                    mask_np_tensor = mask_np_tensor[crop_start:crop_end, :, :]
+                    # lung_np_tensor = lung_np_tensor[crop_start:crop_end, :, :]
+                    # segmentation_np_tensor = segmentation_np_tensor[crop_start:crop_end, :, :]
+                    # mask_np_tensor = mask_np_tensor[crop_start:crop_end, :, :]
+                    
+                    for slice in range(crop_start, crop_end):
+                        print(slice)
+                        lung_np_array = vol[slice, :,:]
+                        segmentation_np_array = make_lungmask(lung_np_array)
+                        lung_np_tensor.append(normalize_clipped(resize_image(lung_np_array)))
+                        segmentation_np_tensor.append(resize_image(segmentation_np_array))
+                        mask_np_tensor.append(resize_image(mask_volume[slice,:,:]))
+                        
+                    lung_np_tensor = np.stack(lung_np_tensor, axis=0)
+                    segmentation_np_tensor = np.stack(segmentation_np_tensor, axis=0)
+                    mask_np_tensor = np.stack(mask_np_tensor, axis=0)
                     
                     print("Cropped Lung Image", lung_np_tensor.shape)
-                    print(f"Cropped from slice {crop_start} to {crop_end}")
 
                 elif length < 128:
+                    for slice in range(vol.shape[0]):
+                        lung_np_array = vol[slice, :,:]
+                        segmentation_np_array = make_lungmask(lung_np_array)
+                        lung_np_tensor.append(normalize_clipped(resize_image(lung_np_array)))
+                        segmentation_np_tensor.append(resize_image(segmentation_np_array))
+                        mask_np_tensor.append(resize_image(mask_volume[slice,:,:]))
+                        
+                    lung_np_tensor = np.stack(lung_np_tensor, axis=0)
+                    segmentation_np_tensor = np.stack(segmentation_np_tensor, axis=0)
+                    mask_np_tensor = np.stack(mask_np_tensor, axis=0)
+                    
                     # padding
                     lung_np_tensor = padding_tensor(lung_np_tensor)
+                    segmentation_np_tensor = padding_tensor(segmentation_np_tensor)
                     mask_np_tensor = padding_tensor(mask_np_tensor)
+                    
+                    print("Padding Nodule Image", lung_np_tensor.shape)
 
                 np.save(IMAGE_DIR / nodule_name, lung_np_tensor)
                 np.save(LUNG_SEGMENTATION_DIR / nodule_name, segmentation_np_tensor)
@@ -265,10 +282,9 @@ class MakeDataSet:
                 
                 for slice in range(vol.shape[0]): # [depth, x, y]
                     lung_segmented_np_array = vol[slice,:,:]
-                    segmentation_np_array = make_lungmask(lung_segmented_np_array)
-                    lung_segmented_np_array = normalize_clipped(lung_segmented_np_array)
+                    segmentation_np_array = make_lungmask(lung_segmented_np_array)                
                     segmentation_np_tensor.append(resize_image(segmentation_np_array))
-                    lung_np_tensor.append(resize_image(lung_segmented_np_array))
+                    lung_np_tensor.append(normalize_clipped(resize_image(lung_segmented_np_array)))
 
                     #CN= CleanNodule, CM = CleanMask
                     # meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True]
@@ -278,6 +294,10 @@ class MakeDataSet:
                 if length < 128:
                     # padding
                     lung_np_tensor = padding_tensor(lung_np_tensor)
+                    segmentation_np_tensor = padding_tensor(segmentation_np_tensor)
+                
+                print("Clean Image", lung_np_tensor.shape)
+                    
                 np.save(CLEAN_DIR_IMAGE / nodule_name, lung_np_tensor)
                 np.save(LUNG_SEGMENTATION_DIR / nodule_name, segmentation_np_tensor)
                 np.save(CLEAN_DIR_MASK / mask_name, np.zeros_like(lung_np_tensor))

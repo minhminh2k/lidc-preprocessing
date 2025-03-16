@@ -85,6 +85,12 @@ def make_lungmask(img):
     # underflow and overflow on the pixel spectrum
     img[img == max] = mean
     img[img == min] = mean
+    
+    #apply median filter
+    img = median_filter(img,size=3)
+    #apply anistropic non-linear diffusion filter- This removes noise without blurring the nodule boundary
+    img = anisotropic_diffusion(img)
+    
     #
     # Using Kmeans to separate foreground (soft tissue / bone) and background (lung/air)
     #
@@ -178,7 +184,7 @@ def padding_tensor(t):
     return t
 
 
-def resample(image, scan, new_spacing=[1,1,1]) -> np.ndarray:
+def resample(image, scan, new_spacing=[1,1,1]) -> tuple[np.ndarray, tuple]:
     # Determine current pixel spacing
     spacing = map(float, ([scan.slice_thickness] + [scan.pixel_spacing] + [scan.pixel_spacing]))
     spacing = np.array(list(spacing))
@@ -196,8 +202,8 @@ def resample(image, scan, new_spacing=[1,1,1]) -> np.ndarray:
     
 def normalize_clipped(image, MIN_BOUND = -1000.0, MAX_BOUND = 400.0):
     image = (image - MIN_BOUND) / (MAX_BOUND - MIN_BOUND)
-    image[image>1.0] = 1.0
-    image[image<0.0] = 0.0
+    image[image>1] = 1
+    image[image<0] = 0
     return image
 
 
