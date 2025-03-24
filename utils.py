@@ -86,7 +86,7 @@ def make_lungmask(img):
     img[img == max] = mean
     img[img == min] = mean
     
-    #apply median filter
+    # apply median filter
     img = median_filter(img,size=3)
     #apply anistropic non-linear diffusion filter- This removes noise without blurring the nodule boundary
     img = anisotropic_diffusion(img)
@@ -127,6 +127,66 @@ def make_lungmask(img):
     
     return mask * img # , mask: Lung Image, Mask
 
+def make_lungmask_v2(images, thresh_volume):
+    lung_list = []
+    
+    for img, thresh_img in zip(images, thresh_volume):
+        row_size = img.shape[0]
+        col_size = img.shape[1]
+
+        mean = np.mean(img)
+        std = np.std(img)
+        img = img - mean
+        img = img / std
+        
+        # Find the average pixel value near the lungs
+        # to renormalize washed out images
+        middle = img[int(col_size / 5):int(col_size / 5 * 4), int(row_size / 5):int(row_size / 5 * 4)]
+        mean = np.mean(middle)
+        max = np.max(img)
+        min = np.min(img)
+        # To improve threshold finding, I'm moving the
+        # underflow and overflow on the pixel spectrum
+        img[img == max] = mean
+        img[img == min] = mean
+        
+        # apply median filter
+        img = median_filter(img,size=3)
+        #apply anistropic non-linear diffusion filter- This removes noise without blurring the nodule boundary
+        img = anisotropic_diffusion(img)
+        
+        #
+        # Using Kmeans to separate foreground (soft tissue / bone) and background (lung/air)
+        #
+        # kmeans = KMeans(n_clusters=2).fit(np.reshape(middle, [np.prod(middle.shape), 1]))
+        # centers = sorted(kmeans.cluster_centers_.flatten())
+        # threshold = np.mean(centers)
+        # thresh_img = np.where(img < threshold, 1.0, 0.0)  # threshold the image
+
+        # First erode away the finer elements, then dilate to include some of the pixels surrounding the lung.
+        # We don't want to accidentally clip the lung.
+
+        eroded = morphology.erosion(thresh_img, np.ones([3, 3]))
+        dilation = morphology.dilation(eroded, np.ones([8, 8]))
+
+        labels = measure.label(dilation)  # Different labels are displayed in different colors
+        label_vals = np.unique(labels)
+        regions = measure.regionprops(labels)
+        good_labels = []
+        for prop in regions:
+            B = prop.bbox
+            if B[2] - B[0] < row_size / 20 * 19 and B[3] - B[1] < col_size / 20 * 19 and B[0] > row_size / 10 and B[
+                2] < col_size / 10 * 9:
+                good_labels.append(prop.label)
+        mask = np.ndarray([row_size, col_size], dtype=np.int8)
+        mask[:] = 0
+
+        for N in good_labels:
+            mask = mask + np.where(labels == N, 1, 0)
+        mask = morphology.dilation(mask, np.ones([10, 10]))  # one last dilation
+        
+        lung_list.append(mask * img)
+    return np.stack(lung_list, axis = 0).astype(np.float32)
 
 def count_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -195,7 +255,7 @@ def resample(image, scan, new_spacing=[1,1,1]):
     real_resize_factor = new_shape / image.shape
     new_spacing = spacing / real_resize_factor
     
-    image = ndimage.interpolation.zoom(image, real_resize_factor)
+    image = ndimage.interpolation.zoom(image, real_resize_factor, order=2, mode="nearest")
     
     return image, new_spacing
 
@@ -206,6 +266,9 @@ def normalize_clipped(image, MIN_BOUND = -1000.0, MAX_BOUND = 400.0):
     image[image<0] = 0
     return image
 
+def denormalize_clipped(image, MIN_BOUND=-1000.0, MAX_BOUND=400.0):
+    image = image * (MAX_BOUND - MIN_BOUND) + MIN_BOUND
+    return image
 
 def zero_center(image, PIXEL_MEAN = 0.25): # LUNA16: Mean ALL datasets = 0.25
     image = image - PIXEL_MEAN
@@ -228,7 +291,7 @@ def segment_lung_mask(image, fill_lung_structures=True): # include structures wi
     
     # not actually binary, but 1 and 2. 
     # 0 is treated as background, which we do not want
-    binary_image = np.array(image > -320, dtype=np.int8)+1
+    binary_image = np.array(image > -320, dtype=np.int8) + 1
     labels = measure.label(binary_image)
     
     # Pick the pixel in the very corner to determine which label is air.
@@ -265,8 +328,7 @@ def segment_lung_mask(image, fill_lung_structures=True): # include structures wi
  
     return binary_image
 
-# segmented_lungs = segment_lung_mask(pix_resampled, False)
-# segmented_lungs_fill = segment_lung_mask(pix_resampled, True) # better
+
 
 # Get 3D Cube
 def get_cube_from_img(img3d, center_x, center_y, center_z, block_size):
