@@ -24,7 +24,7 @@ parser.read('lung.conf')
 
 #Get Directory setting
 DICOM_DIR = is_dir_path(parser.get('prepare_dataset','LIDC_DICOM_PATH'))
-LUNG_SEGMENTATION_DIR_V2 = is_dir_path(parser.get('prepare_dataset','LUNG_SEGMENTATION_PATH_V2'))
+LUNG_SEGMENTATION_DIR_V3 = is_dir_path(parser.get('prepare_dataset','LUNG_SEGMENTATION_PATH_V3'))
 
 #Hyper Parameter setting for prepare dataset function
 mask_threshold = parser.getint('prepare_dataset','Mask_Threshold')
@@ -34,9 +34,9 @@ confidence_level = parser.getfloat('pylidc','confidence_level')
 padding = parser.getint('pylidc','padding_size')
 
 class MakeDataSet:
-    def __init__(self, LIDC_Patients_list, LUNG_SEGMENTATION_DIR_V2, mask_threshold, padding, confidence_level=0.5):
+    def __init__(self, LIDC_Patients_list, LUNG_SEGMENTATION_DIR_V3, mask_threshold, padding, confidence_level=0.5):
         self.IDRI_list = LIDC_Patients_list
-        self.lung_segmentation_dir_v2 = LUNG_SEGMENTATION_DIR_V2
+        self.lung_segmentation_dir_v3 = LUNG_SEGMENTATION_DIR_V3
         self.mask_threshold = mask_threshold
         self.c_level = confidence_level
         self.padding = [(padding,padding),(padding,padding),(0,0)]
@@ -67,13 +67,22 @@ class MakeDataSet:
     
     def prepare_dataset(self):
         # Make directory
-        if not os.path.exists(self.lung_segmentation_dir_v2):
-            os.makedirs(self.lung_segmentation_dir_v2)
+        if not os.path.exists(self.lung_segmentation_dir_v3):
+            os.makedirs(self.lung_segmentation_dir_v3)
 
-        LUNG_SEGMENTATION_DIR_V2 = Path(self.lung_segmentation_dir_v2)
+        LUNG_SEGMENTATION_DIR_V3 = Path(self.lung_segmentation_dir_v3)
 
         for patient in tqdm(self.IDRI_list):
             pid = patient # LIDC-IDRI-0001~
+            
+            # if int(pid[-4:]) not in [18, 67, 95, 110, 132, 184, 196, 218, 264, 294, 305, 314, 319, 324, 328, 330, 331, 335, 339, 341, 344, 353, 361, 394, 395, 403, 419, 427, 435, 
+            #                          481, 523, 539, 546, 550, 552, 569, 574, 618, 619, 621, 658, 661, 665, 685, 697, 706, 712, 714, 723, 724, 728, 729, 737, 745, 750, 760, 
+            #                          785, 794, 801, 803, 828, 834, 837, 848, 860, 866, 877, 894, 915, 928, 933, 935, 942, 946, 973, 984, 998, 999, 1007]:
+            #     continue
+            # if int(pid[-4:]) not in [834, 837, 848, 860, 866, 877, 894, 915, 928, 933, 935, 942, 946, 959, 973, 984, 998, 999, 1007]:
+            #     continue
+            if int(pid[-4:]) != 422:
+                continue 
 
             scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first() # If needed: pl.Scan.slice_thickness <= 1
             nodules_annotation = scan.cluster_annotations()
@@ -91,13 +100,13 @@ class MakeDataSet:
             original_vol_shape = original_vol.shape
             print("Original shape: ", original_vol.shape)
             vol, new_spacing = resample(original_vol, scan, [1,1,1])
-            print("Resample shape, New spacing:", vol.shape, new_spacing)         
+            print("Resample shape, New spacing:", vol.shape, new_spacing)
                         
             # Resample to a common voxel spacing of 1 mm in all directions. 
             # This is to make sure that the voxel size is consistent across all patients
             # The pixel values were converted to Hounsfield units
             
-            patient_segmentation_dir = LUNG_SEGMENTATION_DIR_V2 / pid
+            patient_segmentation_dir = LUNG_SEGMENTATION_DIR_V3 / pid
             Path(patient_segmentation_dir).mkdir(parents=True, exist_ok=True)
 
             if len(nodules_annotation) > 0:
@@ -190,11 +199,11 @@ class MakeDataSet:
                     # padding
                     segmentation_np_tensor = padding_tensor(segmentation_np_tensor)
                     
-                np.save(LUNG_SEGMENTATION_DIR_V2 / nodule_name, segmentation_np_tensor)
+                np.save(LUNG_SEGMENTATION_DIR_V3 / nodule_name, segmentation_np_tensor)
                 
             else:
                 print("Clean Dataset",pid)
-                patient_clean_dir_segmentation = LUNG_SEGMENTATION_DIR_V2 / pid
+                patient_clean_dir_segmentation = LUNG_SEGMENTATION_DIR_V3 / pid
                 Path(patient_clean_dir_segmentation).mkdir(parents=True, exist_ok=True)
                                 
                 #There are patients that don't have nodule at all. Meaning, its a clean dataset. We need to use this for validation
@@ -215,7 +224,7 @@ class MakeDataSet:
                     # padding
                     segmentation_np_tensor = padding_tensor(segmentation_np_tensor)
                 
-                np.save(LUNG_SEGMENTATION_DIR_V2 / nodule_name, segmentation_np_tensor)
+                np.save(LUNG_SEGMENTATION_DIR_V3 / nodule_name, segmentation_np_tensor)
 
 if __name__ == '__main__':
     # I found out that simply using os.listdir() includes the gitignore file 
@@ -223,5 +232,5 @@ if __name__ == '__main__':
     LIDC_IDRI_list.sort()
 
     # Lung Segmentation Dir V2
-    test= MakeDataSet(LIDC_IDRI_list,LUNG_SEGMENTATION_DIR_V2,mask_threshold,padding,confidence_level)
+    test= MakeDataSet(LIDC_IDRI_list,LUNG_SEGMENTATION_DIR_V3,mask_threshold,padding,confidence_level)
     test.prepare_dataset()

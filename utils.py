@@ -127,10 +127,26 @@ def make_lungmask(img):
     
     return mask * img # , mask: Lung Image, Mask
 
+def preprocess_image(images):
+    slice_list = []
+    
+    for img in images:
+        # apply median filter -> smooth noise
+        img = median_filter(img,size=3)
+        #apply anistropic non-linear diffusion filter- This removes noise without blurring the nodule boundary
+        
+        img = normalize_clipped(img)
+        
+        img = anisotropic_diffusion(img)
+        
+        slice_list.append(img)
+        
+    return np.stack(slice_list, axis = 0).astype(np.float32)
+
 def make_lungmask_v2(images, thresh_volume):
     lung_list = []
     
-    for img, thresh_img in zip(images, thresh_volume):
+    for img, _ in zip(images, thresh_volume):
         row_size = img.shape[0]
         col_size = img.shape[1]
 
@@ -141,7 +157,7 @@ def make_lungmask_v2(images, thresh_volume):
         
         # Find the average pixel value near the lungs
         # to renormalize washed out images
-        middle = img[int(col_size / 5):int(col_size / 5 * 4), int(row_size / 5):int(row_size / 5 * 4)]
+        middle = img[int(col_size / 8):int(col_size / 10 * 9), int(row_size / 8):int(row_size / 10 * 9)] # Need to manual adjust for several case
         mean = np.mean(middle)
         max = np.max(img)
         min = np.min(img)
@@ -150,7 +166,7 @@ def make_lungmask_v2(images, thresh_volume):
         img[img == max] = mean
         img[img == min] = mean
         
-        # apply median filter
+        # apply median filter -> smooth noise
         img = median_filter(img,size=3)
         #apply anistropic non-linear diffusion filter- This removes noise without blurring the nodule boundary
         img = anisotropic_diffusion(img)
@@ -158,10 +174,10 @@ def make_lungmask_v2(images, thresh_volume):
         #
         # Using Kmeans to separate foreground (soft tissue / bone) and background (lung/air)
         #
-        # kmeans = KMeans(n_clusters=2).fit(np.reshape(middle, [np.prod(middle.shape), 1]))
-        # centers = sorted(kmeans.cluster_centers_.flatten())
-        # threshold = np.mean(centers)
-        # thresh_img = np.where(img < threshold, 1.0, 0.0)  # threshold the image
+        kmeans = KMeans(n_clusters=2).fit(np.reshape(middle, [np.prod(middle.shape), 1]))
+        centers = sorted(kmeans.cluster_centers_.flatten())
+        threshold = np.mean(centers)
+        thresh_img = np.where(img < threshold, 1.0, 0.0)  # threshold the image
 
         # First erode away the finer elements, then dilate to include some of the pixels surrounding the lung.
         # We don't want to accidentally clip the lung.
@@ -175,9 +191,9 @@ def make_lungmask_v2(images, thresh_volume):
         good_labels = []
         for prop in regions:
             B = prop.bbox
-            if B[2] - B[0] < row_size / 20 * 19 and B[3] - B[1] < col_size / 20 * 19 and B[0] > row_size / 10 and B[
-                2] < col_size / 10 * 9:
-                good_labels.append(prop.label)
+            if B[2] - B[0] < row_size / 40 * 39 and B[3] - B[1] < col_size / 40 * 39 and B[0] > row_size / 15 and B[
+                2] < col_size / 20 * 19:  # Not suitable for several cases
+                 good_labels.append(prop.label)
         mask = np.ndarray([row_size, col_size], dtype=np.int8)
         mask[:] = 0
 
@@ -185,8 +201,17 @@ def make_lungmask_v2(images, thresh_volume):
             mask = mask + np.where(labels == N, 1, 0)
         mask = morphology.dilation(mask, np.ones([10, 10]))  # one last dilation
         
+        print("Z-score normalization: ", img.max(), img.min())
+        # img = min_max_normalize(img)
+        # print("Min_max normalization: ", img.max(), img.min())
+        
         lung_list.append(mask * img)
     return np.stack(lung_list, axis = 0).astype(np.float32)
+
+def min_max_normalize(arr):
+    min_val = np.min(arr)
+    max_val = np.max(arr)
+    return (arr - min_val) / (max_val - min_val) if max_val > min_val else np.zeros_like(arr)
 
 def count_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
